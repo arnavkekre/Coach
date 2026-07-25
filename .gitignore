@@ -1,0 +1,17 @@
+# Python
+backend/env/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Secrets
+.env
+backend/.env
+frontend/.env
+
+# Chroma database
+data/vector_store/
+
+# Node
+frontend/node_modules/
+frontend/dist/
