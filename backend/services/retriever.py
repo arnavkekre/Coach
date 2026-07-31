@@ -5,7 +5,7 @@ class RAGRetriever:
 
     def __init__(self):
         self.vector_store = vector_store
-        self.embedding_manager = embedding_manager
+        self.embedding_manager = get_embedding_manager()
 
 
     def retrieve(
