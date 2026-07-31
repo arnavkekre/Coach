@@ -42,4 +42,14 @@ class EmbeddingManager:
 
         return embeddings
 
-embedding_manager = EmbeddingManager()
+embedding_manager = None
+
+
+def get_embedding_manager():
+
+    global embedding_manager
+
+    if embedding_manager is None:
+        embedding_manager = EmbeddingManager()
+
+    return embedding_manager
