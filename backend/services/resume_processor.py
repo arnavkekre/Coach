@@ -44,9 +44,7 @@ def process_resume(resume_bytes: bytes, user_id: str):
         ]
 
 
-        embeddings = embedding_manager.generate_embeddings(
-            texts
-        )
+        embeddings = get_embedding_manager().generate_embeddings(texts)
 
 
         vector_store.add_documents(
