@@ -4,7 +4,7 @@ import os
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from services.embedding_manager import embedding_manager
+from services.embedding_manager import get_embedding_manager
 from services.vector_store import vector_store
 def split_documents(documents, chunk_size=1000, chunk_overlap=200):
 
