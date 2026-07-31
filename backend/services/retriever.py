@@ -1,4 +1,4 @@
-from services.embedding_manager import embedding_manager
+from services.embedding_manager import get_embedding_manager
 from services.vector_store import vector_store
 
 class RAGRetriever:
