@@ -127,7 +127,7 @@ function Interview() {
           },
         }
       );
-      setQuestion((prev)=>(prev? `${prev} ${response.data.text}`: response.data.text));
+      setAnswer((prev)=>(prev? `${prev} ${response.data.text}`: response.data.text));
     }
     catch(err){
       console.error("Transcription error:", err);
