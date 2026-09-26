@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useRef } from "react";
 import api from "../services/api";
 import { supabase } from "../services/supabase";
 function Chat() {
@@ -8,8 +9,96 @@ function Chat() {
       text: "Hi! I've analyzed your resume. Ask me anything about your experience, projects, or interview preparation.",
     },
   ]);
+  const [isRecording, setIsRecording]= useState(false);
+  
+    const [isTranscribing, setIsTranscribing]= useState(false);
+  
+    const mediaRecorderRef= useRef(null);
+    
+    const audioChunksRef= useRef([]);
 
   const [question, setQuestion] = useState("");
+  const speakText = (text) => {
+  if (!("speechSynthesis" in window)) return;
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+  utterance.rate = 1.0;
+
+  const voices = window.speechSynthesis.getVoices();
+  const englishVoice = voices.find(
+    (voice) => voice.lang.includes("en-US") || voice.lang.includes("en-GB")
+  );
+  if (englishVoice) {
+    utterance.voice = englishVoice;
+  }
+
+  utterance.onstart = () => console.log("AI is speaking...");
+  utterance.onend = () => console.log("AI finished speaking.");
+  utterance.onerror = (e) => console.error("Speech error:", e);
+
+  window.speechSynthesis.speak(utterance); 
+};
+
+  const startRecording= async ()=> {
+    try{
+      const stream= await navigator.mediaDevices.getUserMedia({audio: true});
+      const mediaRecorder= new MediaRecorder(stream);
+      mediaRecorderRef.current= mediaRecorder;
+      audioChunksRef.current= [];
+      mediaRecorder.ondataavailable= (event)=>{
+        if(event.data.size>0){
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      mediaRecorder.onstop= async ()=> {
+        const audioBlob= new Blob(audioChunksRef.current, {type: "audio/webm"});
+        stream.getTracks().forEach((track)=>track.stop());
+        await handleTranscription(audioBlob);
+      };
+      mediaRecorder.start();
+      setIsRecording(true);
+    }
+    catch(err){
+      console.error("Microphone access error", err);
+      alert("please allow microphone access to record your answer");
+    }
+  };
+
+  const stopRecording=()=>{
+    if(mediaRecorderRef.current && isRecording){
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  }
+
+  const handleTranscription= async(audioBlob)=>{
+    try{
+      setIsTranscribing(true);
+      const formData= new FormData();
+      formData.append("file", audioBlob, "recording.webm");
+      const response= await api.post(
+        "/transcribe",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data"
+          },
+        }
+      );
+      setQuestion((prev)=>(prev? `${prev} ${response.data.text}`: response.data.text));
+    }
+    catch(err){
+      console.error("Transcription error:", err);
+      alert("Failed to transcribe the audio.");
+    }
+    finally{
+      setIsTranscribing(false);
+    }
+  };
 
   const handleSend = async () => {
   if (!question.trim()) return;
@@ -52,7 +141,7 @@ function Chat() {
         text: response.data.answer,
       },
     ]);
-
+    speakText(response.data.answer);
 
   } catch (error) {
 
@@ -104,7 +193,26 @@ function Chat() {
 
         {/* Input */}
         <div className="border-t p-4 flex gap-3">
+          <div className="flex items-center justify-between mt-6 mb-2">
+  <button
+    type="button"
+    onClick={isRecording ? stopRecording : startRecording}
+    disabled={isTranscribing}
+    className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm transition ${
+      isRecording
+        ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+        : "bg-slate-800 hover:bg-slate-900 text-white"
+    }`}
+  >
+    {isRecording ? "⏹️ Stop Recording" : "🎙️ Speak Answer"}
+  </button>
 
+  {isTranscribing && (
+    <span className="text-sm text-cyan-600 font-medium animate-pulse">
+      Transcribing your answer with Whisper...
+    </span>
+  )}
+</div>
           <input
             type="text"
             placeholder="Ask something about your resume..."

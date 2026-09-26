@@ -10,6 +10,7 @@ from services.history_service import history_service
 from services.interview_service import interview_service
 from schemas.feedback import FeedbackRequest
 from services.app_feedback_service import app_feedback_service
+from fastapi.staticfiles import StaticFiles
 from schemas.interview import (
     StartInterviewRequest,
     StartInterviewResponse,
@@ -18,8 +19,14 @@ from schemas.interview import (
 )
 import uuid
 from datetime import datetime
+from groq import Groq
 import os
 app= FastAPI()
+"""app.mount(
+    "/assets",
+    StaticFiles(directory="dist/assets"),
+    name="assets"
+)"""
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,11 +35,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+groq_client= Groq(api_key=(os.getenv("GROQ_API_KEY")))
+
 @app.get('/')
 def run():
     return {
         'status': 'i am alive'
     }
+"""@app.get("/")
+async def serve_frontend():
+    return FileResponse("dist/index.html")"""
 """@app.post("/upload-resume")
 async def upload_resume(resume: UploadFile=File(...), user_id: str= Form(...) ):
     file_bytes= await resume.read()
@@ -122,6 +135,18 @@ async def answer_interview(request: AnswerRequest):
     )
 
     return result
+
+@app.post("/transcribe")
+async def transcribe_audio(file: UploadFile= File(...)):
+    audio_bytes= await file.read()
+    transcription= groq_client.audio.transcriptions.create(
+        file=(file.filename or "recording.webm", audio_bytes),
+        model= "whisper-large-v3",
+        response_format= "json"
+    )
+    return {
+        "text": transcription.text
+    }
 
 @app.get("/history/{user_id}")
 async def get_history(user_id: str):

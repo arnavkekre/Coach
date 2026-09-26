@@ -836,6 +836,205 @@ class AnswerResponse(BaseModel):
 class EndInterviewRequest(BaseModel):
     interview_id: str
 
+/backend/schema/feedback.py
+from pydantic import BaseModel
+
+
+class FeedbackRequest(BaseModel):
+
+    user_id: str
+    message: str
+
+/backend/services/app_feedback_service.py
+from services.feedback_repository import feedback_repository
+
+
+class AppFeedbackService:
+
+
+    def submit_feedback(
+        self,
+        user_id,
+        message
+    ):
+
+        return feedback_repository.save_feedback(
+            user_id,
+            message
+        )
+
+
+app_feedback_service = AppFeedbackService()
+
+/backend/services/feedback_repository.py
+from services.supabase_client import supabase
+
+
+class FeedbackRepository:
+
+
+    def save_feedback(
+        self,
+        user_id,
+        message
+    ):
+
+        response = (
+            supabase
+            .table("app_feedback")
+            .insert({
+                "user_id": user_id,
+                "message": message
+            })
+            .execute()
+        )
+
+        return response.data
+
+
+feedback_repository = FeedbackRepository()
+
+/backend/services/interview_repository.py
+from services.supabase_client import supabase
+from datetime import datetime, timezone
+
+class InterviewRepository:
+
+    def create_interview(
+        self,
+        interview_id,
+        user_id,
+        total_questions
+    ):
+
+        supabase.table("interviews").insert({
+
+            "id": interview_id,
+
+            "user_id": user_id,
+
+            "total_questions": total_questions
+
+        }).execute()
+
+
+    def save_answer(
+        self,
+        interview_id,
+        question,
+        answer,
+        feedback
+    ):
+
+        supabase.table(
+            "interview_answers"
+        ).insert({
+
+            "interview_id": interview_id,
+
+            "question": question,
+
+            "answer": answer,
+
+            "feedback": feedback
+
+        }).execute()
+
+
+    def complete_interview(
+        self,
+        interview_id
+    ):
+
+        supabase.table("interviews").update({
+            "status": "completed",
+            "ended_at": datetime.now(timezone.utc).isoformat()
+        }).eq("id", interview_id).execute()
+
+
+    def get_user_interviews(self, user_id: str):
+
+        response = (
+            supabase.table("interviews")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("started_at", desc=True)
+            .execute()
+        )
+
+        return response.data
+
+
+    def get_interview(self, interview_id: str):
+
+        response = (
+            supabase.table("interviews")
+            .select("*")
+            .eq("id", interview_id)
+            .single()
+            .execute()
+        )
+
+        return response.data
+
+
+    def get_answers(self, interview_id: str):
+
+        response = (
+            supabase.table("interview_answers")
+            .select("*")
+            .eq("interview_id", interview_id)
+            .order("created_at")
+            .execute()
+        )
+
+        return response.data
+
+
+interview_repository = InterviewRepository()
+
+/backend/services/history_service.py
+from services.interview_repository import interview_repository
+
+
+class HistoryService:
+
+    def get_history(self, user_id: str):
+
+        interviews = interview_repository.get_user_interviews(
+            user_id
+        )
+
+        return interviews
+
+
+    def get_interview_details(self, interview_id: str):
+
+        interview = interview_repository.get_interview(
+            interview_id
+        )
+
+        answers = interview_repository.get_answers(
+            interview_id
+        )
+
+        return {
+            "interview": interview,
+            "answers": answers
+        }
+
+
+history_service = HistoryService()
+
+
+
+
+
+
+
+
+
+
 
 
 /frontend/
@@ -1731,7 +1930,7 @@ function Navbar() {
 
 export default Navbar;
 
-services/pages/Chat.jsx
+/pages/Chat.jsx
 import { useState } from "react";
 import api from "../services/api";
 import { supabase } from "../services/supabase";
@@ -1863,14 +2062,844 @@ function Chat() {
 
 export default Chat;
 
+src/pages/Feedback.jsx
+import { useState } from "react";
+import api from "../services/api";
+import { supabase } from "../services/supabase";
+
+
+function Feedback(){
+
+    const [message,setMessage] = useState("");
+    const [submitted,setSubmitted] = useState(false);
+
+
+    const submitFeedback = async()=>{
+
+        const {
+            data:{user}
+        } = await supabase.auth.getUser();
+
+
+        if(!user){
+            alert("Please login first");
+            return;
+        }
+
+
+        await api.post("/feedback",{
+            user_id:user.id,
+            message:message
+        });
+
+
+        setSubmitted(true);
+        setMessage("");
+
+    };
+
+
+    return (
+
+        <div className="min-h-screen bg-slate-100 flex justify-center p-10">
+
+
+            <div className="bg-white shadow rounded-xl p-8 w-full max-w-xl">
+
+
+                <h1 className="text-3xl font-bold">
+                    Feedback
+                </h1>
+
+
+                <p className="text-slate-600 mt-2">
+                    Help us improve Coach.
+                </p>
+
+
+                {
+                    submitted ? (
+
+                        <div className="mt-8 text-green-600 font-semibold">
+                            Thanks for your feedback!
+                        </div>
+
+                    ) : (
+
+                        <>
+                        <textarea
+                            className="mt-6 w-full border rounded-lg p-4"
+                            rows="5"
+                            placeholder="Write your feedback..."
+                            value={message}
+                            onChange={(e)=>setMessage(e.target.value)}
+                        />
+
+
+                        <button
+                            onClick={submitFeedback}
+                            className="mt-4 bg-cyan-500 text-white px-6 py-2 rounded-lg"
+                        >
+                            Submit
+                        </button>
+
+                        </>
+
+                    )
+                }
+
+
+            </div>
+
+
+        </div>
+
+    );
+
+}
+
+
+export default Feedback;
+
+src/pages/History.jsx
+import { useEffect, useState } from "react";
+import api from "../services/api";
+import { supabase } from "../services/supabase";
+
+function History() {
+
+  const [interviews, setInterviews] = useState([]);
+  const [selectedInterview, setSelectedInterview] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+
+  const fetchHistory = async () => {
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+
+    if (!user) {
+      alert("Please login first");
+      return;
+    }
+
+
+    try {
+
+      const response = await api.get(
+        `/history/${user.id}`
+      );
+
+      setInterviews(response.data);
+
+    } catch(error) {
+
+      console.error(error);
+      alert("Failed to load history");
+
+    }
+
+  };
+
+
+  const openInterview = async (id) => {
+
+    setLoading(true);
+
+    try {
+
+      const response = await api.get(
+        `/history/details/${id}`
+      );
+
+      setSelectedInterview(response.data);
+
+    } catch(error) {
+
+      console.error(error);
+
+    }
+
+    setLoading(false);
+
+  };
+
+
+  return (
+
+    <div className="min-h-screen bg-slate-100 p-8">
+
+
+      <h1 className="text-3xl font-bold text-slate-800 mb-8">
+        Interview History
+      </h1>
+
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+
+        {/* Interview List */}
+
+        <div className="bg-white rounded-xl shadow p-6">
+
+          <h2 className="text-xl font-bold mb-5">
+            Previous Interviews
+          </h2>
+
+
+          {
+            interviews.length === 0 && (
+              <p className="text-slate-500">
+                No interviews yet.
+              </p>
+            )
+          }
+
+
+          {
+            interviews.map((item)=> (
+
+              <div
+                key={item.id}
+                onClick={()=>openInterview(item.id)}
+                className="
+                  cursor-pointer
+                  border
+                  rounded-lg
+                  p-4
+                  mb-3
+                  hover:bg-slate-100
+                "
+              >
+
+                <p className="font-semibold">
+                  Interview
+                </p>
+
+
+                <p className="text-sm text-slate-600">
+                  Status: {item.status}
+                </p>
+
+
+                <p className="text-sm text-slate-600">
+                  Questions: {item.total_questions}
+                </p>
+
+
+                {
+                  item.started_at &&
+                  <p className="text-xs text-slate-400 mt-2">
+                    {
+                      new Date(
+                        item.started_at
+                      ).toLocaleDateString()
+                    }
+                  </p>
+                }
+
+
+              </div>
+
+            ))
+          }
+
+
+        </div>
+
+
+
+        {/* Interview Details */}
+
+        <div className="md:col-span-2 bg-white rounded-xl shadow p-6">
+
+
+          {
+            !selectedInterview && (
+
+              <p className="text-slate-500">
+                Select an interview to view details.
+              </p>
+
+            )
+          }
+
+
+
+          {
+            loading && (
+
+              <p>
+                Loading...
+              </p>
+
+            )
+          }
+
+
+
+          {
+            selectedInterview && !loading && (
+
+              <div>
+
+
+                <h2 className="text-2xl font-bold mb-6">
+                  Interview Review
+                </h2>
+
+
+
+                {
+                  selectedInterview.answers.map(
+                    (item,index)=>(
+
+
+                    <div
+                      key={index}
+                      className="
+                        border-b
+                        pb-6
+                        mb-6
+                      "
+                    >
+
+                      <h3 className="font-bold">
+                        Question {index+1}
+                      </h3>
+
+
+                      <p className="mt-2 text-slate-700">
+                        {item.question}
+                      </p>
+
+
+
+                      <h3 className="font-bold mt-5">
+                        Your Answer
+                      </h3>
+
+
+                      <p className="mt-2 text-slate-700">
+                        {item.answer}
+                      </p>
+
+
+
+                      <h3 className="font-bold mt-5">
+                        AI Feedback
+                      </h3>
+
+
+                      <p className="
+                        mt-2
+                        whitespace-pre-wrap
+                        text-slate-700
+                      ">
+                        {item.feedback}
+                      </p>
+
+
+                    </div>
+
+
+                  ))
+                }
+
+
+              </div>
+
+            )
+          }
+
+
+        </div>
+
+
+      </div>
+
+
+    </div>
+
+  );
+
+}
+
+
+export default History;
+
+src/pages/Home.jsx
+import { Link } from "react-router-dom";
+
+function Home() {
+  return (
+    <div className="min-h-screen bg-slate-100">
+      {/* Hero */}
+      <section className="mx-auto max-w-7xl px-6 py-20">
+        <div className="text-center">
+          <h1 className="text-5xl font-bold text-slate-900">
+            Ace Your Next Technical Interview
+          </h1>
+
+          <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-600">
+            Coach uses AI to analyze your resume, conduct personalized mock
+            interviews, evaluate your answers, and help you improve with
+            detailed feedback.
+          </p>
+
+          <div className="mt-10 flex justify-center gap-4">
+            <Link
+              to="/signup"
+              className="rounded-lg bg-cyan-500 px-6 py-3 text-white hover:bg-cyan-600"
+            >
+              Get Started
+            </Link>
+
+            <Link
+              to="/upload"
+              className="rounded-lg border border-cyan-500 px-6 py-3 text-cyan-600 hover:bg-cyan-50"
+            >
+              Upload Resume
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section className="mx-auto grid max-w-6xl gap-8 px-6 pb-20 md:grid-cols-3">
+
+        <div className="rounded-xl bg-white p-8 shadow">
+          <div className="text-4xl">📄</div>
+
+          <h2 className="mt-4 text-xl font-bold">
+            Resume Analysis
+          </h2>
+
+          <p className="mt-3 text-slate-600">
+            Upload your resume and let Coach build a personalized knowledge
+            base for interview preparation.
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white p-8 shadow">
+          <div className="text-4xl">💬</div>
+
+          <h2 className="mt-4 text-xl font-bold">
+            AI Resume Chat
+          </h2>
+
+          <p className="mt-3 text-slate-600">
+            Ask questions about your projects, skills, and experience exactly
+            like an interviewer would.
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white p-8 shadow">
+          <div className="text-4xl">🎤</div>
+
+          <h2 className="mt-4 text-xl font-bold">
+            Mock Interviews
+          </h2>
+
+          <p className="mt-3 text-slate-600">
+            Practice AI-generated interview questions and receive instant
+            feedback on every answer.
+          </p>
+        </div>
+
+      </section>
+
+      {/* How it works */}
+      <section className="bg-white py-16">
+        <div className="mx-auto max-w-6xl px-6">
+
+          <h2 className="text-center text-3xl font-bold text-slate-800">
+            How It Works
+          </h2>
+
+          <div className="mt-12 grid gap-8 md:grid-cols-4">
+
+            <div className="text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500 text-xl font-bold text-white">
+                1
+              </div>
+
+              <h3 className="mt-4 font-semibold">
+                Sign Up
+              </h3>
+
+              <p className="mt-2 text-sm text-slate-600">
+                Create your account securely using Supabase Authentication.
+              </p>
+            </div>
+
+            <div className="text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500 text-xl font-bold text-white">
+                2
+              </div>
+
+              <h3 className="mt-4 font-semibold">
+                Upload Resume
+              </h3>
+
+              <p className="mt-2 text-sm text-slate-600">
+                Coach extracts information and prepares your personal knowledge
+                base.
+              </p>
+            </div>
+
+            <div className="text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500 text-xl font-bold text-white">
+                3
+              </div>
+
+              <h3 className="mt-4 font-semibold">
+                Practice
+              </h3>
+
+              <p className="mt-2 text-sm text-slate-600">
+                Chat with Coach or start a personalized mock interview.
+              </p>
+            </div>
+
+            <div className="text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500 text-xl font-bold text-white">
+                4
+              </div>
+
+              <h3 className="mt-4 font-semibold">
+                Improve
+              </h3>
+
+              <p className="mt-2 text-sm text-slate-600">
+                Learn from AI feedback and become interview ready.
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export default Home;
+
+src/pages/Interview.jsx
+import { useState } from "react";
+import api from "../services/api";
+import { supabase } from "../services/supabase";
+
+
+function Interview() {
+
+  const [interviewId, setInterviewId] = useState(null);
+
+  const [question, setQuestion] = useState("");
+
+  const [answer, setAnswer] = useState("");
+
+  const [feedback, setFeedback] = useState("");
+
+  const [finished, setFinished] = useState(false);
+
+  const [started, setStarted] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+
+
+
+  const startInterview = async () => {
+
+    try {
+
+      setLoading(true);
+
+
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+
+
+      if (!user) {
+        alert("Please login first");
+        return;
+      }
+
+
+      const response = await api.post(
+        "/interview/start",
+        {
+          user_id: user.id
+        }
+      );
+
+
+      setInterviewId(
+        response.data.interview_id
+      );
+
+
+      setQuestion(
+        response.data.question
+      );
+
+
+      setStarted(true);
+
+
+    } catch(error){
+
+      console.error(error);
+
+      alert("Could not start interview");
+
+    }
+    finally{
+
+      setLoading(false);
+
+    }
+
+  };
+
+
+
+  const submitAnswer = async () => {
+
+    if(!answer.trim()) return;
+
+
+    try{
+
+      setLoading(true);
+
+
+      const response = await api.post(
+        "/interview/answer",
+        {
+          interview_id: interviewId,
+          answer: answer
+        }
+      );
+
+
+      setFeedback(
+        response.data.feedback
+      );
+
+
+      setAnswer("");
+
+
+
+      if(response.data.finished){
+
+        setFinished(true);
+
+      }
+      else{
+
+        setQuestion(
+          response.data.question
+        );
+
+      }
+
+
+    }
+    catch(error){
+
+      console.error(error);
+
+      alert("Something went wrong");
+
+    }
+    finally{
+
+      setLoading(false);
+
+    }
+
+  };
+
+
+
+  return (
+
+    <div className="min-h-screen bg-slate-100 py-10">
+
+
+      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-lg p-8">
+
+
+        <h1 className="text-3xl font-bold text-slate-800">
+          AI Interview Coach
+        </h1>
+
+
+        <p className="text-slate-600 mt-2">
+          Practice technical interviews based on your resume.
+        </p>
+
+
+
+        {
+          !started && (
+
+            <button
+
+              onClick={startInterview}
+
+              className="mt-8 bg-cyan-500 text-white px-6 py-3 rounded-lg hover:bg-cyan-600"
+
+            >
+
+              {
+                loading 
+                ? "Starting..."
+                : "Start Interview"
+              }
+
+            </button>
+
+          )
+        }
+
+
+
+        {
+          started && !finished && (
+
+            <div className="mt-8">
+
+
+              <div className="bg-slate-100 rounded-lg p-5">
+
+
+                <h2 className="font-semibold text-lg">
+                  Question
+                </h2>
+
+
+                <p className="mt-3 text-slate-700">
+                  {question}
+                </p>
+
+
+              </div>
+
+
+
+              <textarea
+
+                className="w-full mt-6 border rounded-lg p-4"
+
+                rows="5"
+
+                placeholder="Type your answer..."
+
+                value={answer}
+
+                onChange={
+                  (e)=>setAnswer(e.target.value)
+                }
+
+              />
+
+
+
+              <button
+
+                onClick={submitAnswer}
+
+                className="mt-4 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700"
+
+              >
+
+                {
+                  loading
+                  ? "Evaluating..."
+                  : "Submit Answer"
+                }
+
+              </button>
+
+
+
+            </div>
+
+          )
+        }
 
 
 
 
+        {
+          feedback && (
+
+            <div className="mt-8 bg-blue-50 border rounded-lg p-5">
+
+
+              <h2 className="font-bold text-lg">
+                Feedback
+              </h2>
+
+
+              <p className="mt-3 whitespace-pre-line">
+                {feedback}
+              </p>
+
+
+            </div>
+
+          )
+        }
 
 
 
 
+        {
+          finished && (
+
+            <div className="mt-8 bg-green-50 border rounded-lg p-5">
+
+              <h2 className="text-xl font-bold text-green-700">
+                Interview Completed 🎉
+              </h2>
+
+
+              <p className="mt-2">
+                You have completed the interview.
+              </p>
+
+
+            </div>
+
+          )
+        }
+
+
+
+      </div>
+
+
+    </div>
+
+  );
+
+}
+
+
+export default Interview;
 
 
 
