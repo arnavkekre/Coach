@@ -115,7 +115,7 @@ class VectorStore:
 
             raise
 
-vector_store = None
+vector_store = VectorStore()
 
 
 def get_vector_store():
