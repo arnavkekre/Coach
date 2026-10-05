@@ -2,12 +2,13 @@ import os
 import uuid
 import chromadb
 import numpy as np
-
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DIR = os.path.join(BASE_DIR, "data", "vector_store")
 from typing import Any, List
 
 class VectorStore:
 
-    def __init__(self, collection_name: str = "resume_embeddings", persist_directory: str= "../data/vector_store"):
+    def __init__(self, collection_name: str = "resume_embeddings", persist_directory: str= DEFAULT_DIR):
 
         self.collection_name=collection_name
 
