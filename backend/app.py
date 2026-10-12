@@ -21,6 +21,9 @@ import uuid
 from datetime import datetime
 from groq import Groq
 import os
+from azure.monitor.opentelemetry import configure_azure_monitor
+
+configure_azure_monitor()
 app= FastAPI()
 """app.mount(
     "/assets",
