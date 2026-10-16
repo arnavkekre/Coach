@@ -29,7 +29,7 @@ flowchart TD
     end
 
     subgraph Messaging ["Message Broker (Azure Service Bus)"]
-        Queue[("Queue: transcription-jobs<br/>(FIFO, DLQ, At-Least-Once)")]
+        Queue["Queue: transcription-jobs<br/>(FIFO, DLQ, At-Least-Once)"]
     end
 
     subgraph Processing ["Decoupled Worker (Azure Container Apps)"]
@@ -49,21 +49,21 @@ flowchart TD
     end
 
     %% Data Flow
-    PDF -->|Upload PDF & User ID| API
-    UI -->|WebM Audio Recording| API
-    API -->|Extract Chunks & Embed| RAG
-    RAG -->|Store Document Vectors| SupaDB
+    PDF -->|"Upload PDF & User ID"| API
+    UI -->|"WebM Audio Recording"| API
+    API -->|"Extract Chunks & Embed"| RAG
+    RAG -->|"Store Document Vectors"| SupaDB
 
-    API -->|Enqueue Evaluation Job| Queue
-    API -->|Synchronous STT Call| Whisper
+    API -->|"Enqueue Evaluation Job"| Queue
+    API -->|"Synchronous STT Call"| Whisper
 
-    Queue -->|Pull Batch (max=5)| Worker
-    Worker -->|Fetch Audio Blob| SupaStorage
-    Worker -->|1. Try Primary Inference| PrimaryLLM
-    PrimaryLLM -.->|On Exception / Quota| FallbackLLM
-    PrimaryLLM -->|Structured Feedback & Scores| SupaDB
-    FallbackLLM -->|Fallback Evaluation Result| SupaDB
-    Worker -->|Acknowledge / Delete Message| Queue
+    Queue -->|"Pull Batch (Batch size: 5)"| Worker
+    Worker -->|"Fetch Audio Blob"| SupaStorage
+    Worker -->|"1. Try Primary Inference"| PrimaryLLM
+    PrimaryLLM -.->|"On Exception or Quota"| FallbackLLM
+    PrimaryLLM -->|"Structured Feedback & Scores"| SupaDB
+    FallbackLLM -->|"Fallback Evaluation Result"| SupaDB
+    Worker -->|"Acknowledge & Delete Message"| Queue
 
-    API -.->|Telemetry & Spans| AppInsights
-    Worker -.->|Telemetry & Spans| AppInsights
+    API -.->|"Telemetry & Spans"| AppInsights
+    Worker -.->|"Telemetry & Spans"| AppInsights
