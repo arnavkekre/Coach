@@ -1,17 +1,40 @@
-# Python
+# Python & Virtual Environments
 backend/env/
-backend/__pycache__/
+backend/.venv/
 **/__pycache__/
 *.pyc
+*.pyo
 
 # Secrets
 .env
 backend/.env
 frontend/.env
+*.pem
+*.key
 
-# Chroma database
+# Vector store data
 data/vector_store/
+backend/data/vector_store/
+*.sqlite3
+*.db
 
-# Node
+# Test Suites & Reports (Pytest, Vitest, Playwright)
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+backend/tests/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.playwright/
+frontend/e2e/
+
+# Node & Builds
 frontend/node_modules/
 frontend/dist/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
