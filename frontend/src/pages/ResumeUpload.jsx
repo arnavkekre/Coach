@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "../services/supabase";
 import api from "../services/api"
 function ResumeUpload() {
   const [file, setFile] = useState(null);
+  const fileInputRef= useRef(null);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -30,10 +31,32 @@ if (!user) {
         )
         console.log("Upload successful!");
         console.log(response.data);
+        alert("Upload Successful");
     }
     catch (error) {
     console.error(error.response?.data || error);
 }
+  }
+  const viewResume= ()=> {
+    if(!file){
+      alert("Choose a file first");
+      return;
+    }
+      const fileurl= URL.createObjectURL(file);
+      window.open(fileurl, "_blank");
+  }
+
+  const editResume= ()=>{
+    if(fileInputRef.current){
+      fileInputRef.current.click();
+    }
+  }
+
+  const deleteResume= ()=>{
+    setFile(null);
+    if(fileInputRef.current){
+      fileInputRef.current.value="";
+    }
   }
   return (
     <div className="min-h-screen bg-slate-100 py-10">
@@ -50,6 +73,7 @@ if (!user) {
         {/* Upload Box */}
         <div className="rounded-lg border-2 border-dashed border-slate-300 p-8 text-center">
           <input
+            ref={fileInputRef}
             type="file"
             accept=".pdf,.doc,.docx"
             onChange={handleFileChange}
@@ -76,15 +100,15 @@ if (!user) {
             <p className="mt-2">{file.name}</p>
 
             <div className="mt-6 flex gap-4">
-              <button className="rounded-lg bg-blue-600 px-5 py-2 text-white hover:bg-blue-700">
+              <button onClick={viewResume} className="rounded-lg bg-blue-600 px-5 py-2 text-white hover:bg-blue-700">
                 View Resume
               </button>
 
-              <button className="rounded-lg bg-green-600 px-5 py-2 text-white hover:bg-green-700">
+              <button onClick={editResume} className="rounded-lg bg-green-600 px-5 py-2 text-white hover:bg-green-700">
                 Edit Resume
               </button>
 
-              <button className="rounded-lg bg-red-600 px-5 py-2 text-white hover:bg-red-700">
+              <button onClick={deleteResume} className="rounded-lg bg-red-600 px-5 py-2 text-white hover:bg-red-700">
                 Remove
               </button>
 
