@@ -4,7 +4,6 @@ import chromadb
 import numpy as np
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DIR = os.path.join(BASE_DIR, "data", "vector_store")
-
 from typing import Any, List
 
 class VectorStore:
@@ -128,4 +127,5 @@ def get_vector_store():
         vector_store = VectorStore()
 
     return vector_store
+
 
