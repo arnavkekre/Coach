@@ -65,11 +65,12 @@ app.add_middleware(
     allow_origins=[
         "https://d36vtqnt7szogv.cloudfront.net",
         "https://blue-forest-08683d910.azurestaticapps.net",
+        "https://main.dfef58a7porfq.amplifyapp.com",
         "http://localhost:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5173",
     ],
-    allow_origin_regex=r"https://.*\.azurestaticapps\.net",
+    allow_origin_regex=r"https://.*(\.azurestaticapps\.net|\.amplifyapp\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
