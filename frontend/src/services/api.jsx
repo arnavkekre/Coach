@@ -1,22 +1,22 @@
 import axios from "axios";
 
 const getBaseURL = () => {
-  // 1. Azure Static Web Apps or Custom Environment Variable
+  // 1. Explicit Custom Environment Variable (Used by Azure SWA build)
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
 
-  // 2. Production environments
-  if (import.meta.env.PROD) {
-    // If running behind AWS CloudFront reverse proxy
-    if (typeof window !== "undefined" && window.location.hostname.includes("cloudfront.net")) {
-      return "/api";
-    }
-    // AWS Elastic Beanstalk fallback
-    return "http://coach-backend-env.eba-82exqwu5.ap-south-1.elasticbeanstalk.com";
+  // 2. Azure Static Web Apps Fallback (Guarantees Azure never breaks)
+  if (typeof window !== "undefined" && window.location.hostname.includes("azurestaticapps.net")) {
+    return "https://arnav-appservice-2026-ggcugyh3bcfsfzfd.southindia-01.azurewebsites.net";
   }
 
-  // 3. Local Development (Coach without docker default)
+  // 3. AWS Production (AWS Amplify / CloudFront relative reverse proxy)
+  if (import.meta.env.PROD) {
+    return "/api";
+  }
+
+  // 4. Local Development
   return "http://localhost:8000";
 };
 
@@ -24,7 +24,7 @@ const api = axios.create({
   baseURL: getBaseURL(),
 });
 
-// AWS Cognito OIDC Bearer Token Interceptor (from Coach without docker)
+// AWS Cognito OIDC Bearer Token Interceptor
 api.interceptors.request.use((config) => {
   const oidcStorage = Object.keys(sessionStorage).find((key) =>
     key.startsWith("oidc.user:")
