@@ -1,0 +1,44 @@
+name: Deploy Frontend to Azure Storage Static Site
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-azure-frontend.yml'
+
+jobs:
+  deploy:
+    name: Build & Upload to Azure $web
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build Frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_URL: https://coach-backend-app.happyfield-5844ff12.southindia.azurecontainerapps.io
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Upload to Azure Storage ($web)
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            az storage blob upload-batch \
+              --connection-string "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+              -d '$web' \
+              -s frontend/dist \
+              --overwrite
