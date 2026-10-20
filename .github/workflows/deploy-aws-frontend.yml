@@ -30,6 +30,9 @@ jobs:
           node-version: 20
 
       - name: Install & Build Frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           cd frontend
           npm ci
