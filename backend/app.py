@@ -36,29 +36,63 @@ from schemas.interview import (
 
 security = HTTPBearer(auto_error=False)
 
+# ----------------- AWS Cognito Configuration -----------------
 COGNITO_REGION = "ap-south-1"
 USER_POOL_ID = "ap-south-1_osgqy6Zz7"
 COGNITO_ISSUER = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/{USER_POOL_ID}"
-JWKS_URL = f"{COGNITO_ISSUER}/.well-known/jwks.json"
+COGNITO_JWKS_URL = f"{COGNITO_ISSUER}/.well-known/jwks.json"
+cognito_jwks_client = PyJWKClient(COGNITO_JWKS_URL)
 
-jwks_client = PyJWKClient(JWKS_URL)
+# ------------- Microsoft Entra ID Configuration -------------
+ENTRA_TENANT_ID = "1c538645-93ad-4d75-bba5-186bdd68efcf"
+ENTRA_CLIENT_ID = "ca7d26bf-d8b8-4176-8ab4-979743b7c6f2"
+ENTRA_ISSUER = f"https://login.microsoftonline.com/{ENTRA_TENANT_ID}/v2.0"
+ENTRA_JWKS_URL = f"https://login.microsoftonline.com/{ENTRA_TENANT_ID}/discovery/v2.0/keys"
+entra_jwks_client = PyJWKClient(ENTRA_JWKS_URL)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     # Allow test suite / bypass when in testing mode or credentials not provided in dev
     if os.getenv("TESTING") == "1" or not credentials:
-        return {"sub": "anonymous-user", "email": "test@example.com"}
+        return {"sub": "anonymous-user", "email": "test@example.com", "provider": "dev-bypass"}
 
     token = credentials.credentials
     try:
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            issuer=COGNITO_ISSUER,
-            options={"verify_aud": False}
-        )
-        return payload
+        # Inspect unverified claims to determine if token is from Cognito or Entra ID
+        unverified_claims = jwt.decode(token, options={"verify_signature": False})
+        issuer = unverified_claims.get("iss", "")
+
+        if "login.microsoftonline.com" in issuer:
+            # 🔵 Validate Microsoft Entra ID Token
+            signing_key = entra_jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                issuer=ENTRA_ISSUER,
+                options={"verify_aud": False}
+            )
+            return {
+                "sub": payload.get("oid") or payload.get("sub"),
+                "email": payload.get("preferred_username") or payload.get("email") or "azure-user@example.com",
+                "provider": "azure-entra-id",
+                "raw": payload
+            }
+        else:
+            # 🟠 Validate AWS Cognito Token
+            signing_key = cognito_jwks_client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                issuer=COGNITO_ISSUER,
+                options={"verify_aud": False}
+            )
+            return {
+                "sub": payload.get("sub"),
+                "email": payload.get("email", "cognito-user@example.com"),
+                "provider": "aws-cognito",
+                "raw": payload
+            }
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
