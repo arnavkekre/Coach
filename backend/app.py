@@ -1,8 +1,12 @@
 import sys
-# Fix for Azure App Service Linux: remove outdated /agents/python telemetry path that shadows virtualenv packages
-sys.path = [p for p in sys.path if not p.startswith('/agents/python')]
-if 'typing_extensions' in sys.modules:
-    del sys.modules['typing_extensions']
+# Fix for Azure App Service Linux: strip ALL /agents telemetry paths that shadow virtualenv packages
+sys.path = [p for p in sys.path if 'agents' not in p]
+
+# Purge any pre-loaded Azure telemetry modules so clean versions load from antenv
+for mod in list(sys.modules.keys()):
+    if any(pkg in mod for pkg in ['opentelemetry', 'typing_extensions']):
+        del sys.modules[mod]
+
 from fastapi import FastAPI, APIRouter, UploadFile, File, Form, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import jwt
