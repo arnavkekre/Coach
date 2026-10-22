@@ -1,0 +1,37 @@
+name: Deploy Backend to AWS Elastic Beanstalk
+
+on:
+  workflow_dispatch: # Allows manual 1-click trigger from GitHub Actions tab
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-aws-eb.yml'
+
+jobs:
+  deploy:
+    name: Package & Deploy to Elastic Beanstalk
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Create Deployment Package with Procfile
+        run: |
+          cd backend
+          echo "web: uvicorn app:app --host 0.0.0.0 --port 8000" > Procfile
+          zip -r ../deploy.zip . -x "*.git*" "*.pyc" "*__pycache__*" "tests/*" "test_*.py" "notebooks/*" "Dockerfile" ".dockerignore"
+
+      - name: Deploy to AWS Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: Coach-backend
+          environment_name: Coach-backend-env
+          version_label: "eb-deploy-${{ github.sha }}-${{ github.run_number }}"
+          region: ap-south-1
+          deployment_package: deploy.zip
+          wait_for_environment_recovery: 300
