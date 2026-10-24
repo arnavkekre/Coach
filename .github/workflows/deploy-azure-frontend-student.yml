@@ -1,4 +1,4 @@
-name: Deploy Frontend to Azure Storage Static Site
+name: Deploy Frontend to Azure Storage (Student)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - 'frontend/**'
-      - '.github/workflows/deploy-azure-frontend.yml'
+      - '.github/workflows/deploy-azure-frontend-student.yml'
 
 jobs:
   deploy:
