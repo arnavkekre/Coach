@@ -8,7 +8,7 @@ const getBaseURL = () => {
 
   // 2. Azure Static Web Apps Fallback (Guarantees Azure never breaks)
   if (typeof window !== "undefined" && window.location.hostname.includes("azurestaticapps.net")) {
-    return "https://arnav-appservice-2026-ggcugyh3bcfsfzfd.southindia-01.azurewebsites.net";
+    return "https://arnav-coach-student-2026.azurewebsites.net";
   }
 
   // 3. AWS Production (AWS Amplify / CloudFront relative reverse proxy)
