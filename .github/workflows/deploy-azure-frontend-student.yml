@@ -27,7 +27,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_API_URL: https://coach-backend-app.delightfulwater-7b52bfa2.eastasia.azurecontainerapps.io
+          VITE_API_URL: https://coach-backend-korea.nicepond-ae0bbb9d.koreacentral.azurecontainerapps.io
         run: |
           cd frontend
           npm install
