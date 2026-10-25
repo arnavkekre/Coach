@@ -31,7 +31,7 @@ jobs:
           registryUrl: coachacrstudent.azurecr.io
           registryUsername: ${{ secrets.COACHBACKENDAPP_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.COACHBACKENDAPP_REGISTRY_PASSWORD }}
-          containerAppName: coach-backend-app
+          containerAppName: coach-backend-korea
           resourceGroup: rg-containers-student
           imageToBuild: coachacrstudent.azurecr.io/coach-backend-app:${{ github.sha }}
           _buildArgumentsKey_: |
