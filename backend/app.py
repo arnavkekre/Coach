@@ -111,6 +111,7 @@ app.add_middleware(
         "https://main.dfef58a7porfq.amplifyapp.com",
         "https://arnavcoachstatic2026.z30.web.core.windows.net",
         "https://thankful-plant-0e7dba400.2.azurestaticapps.net",
+        "https://coachstaticstudent.z58.web.core.windows.net",
         "http://localhost:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5173",
