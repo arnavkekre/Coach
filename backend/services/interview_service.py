@@ -10,7 +10,7 @@ class InterviewService:
     def __init__(self):
         self.sessions = {}
 
-    def start_interview(self, user_id: str):
+    def start_interview(self, user_id: str, max_safety_cap: int =15):
         results = retriever.retrieve(
     query="Tell me everything about this candidate's resume.",
     user_id=user_id,
@@ -21,45 +21,34 @@ class InterviewService:
             for doc in results
         )
         prompt = f"""
-You are a senior software engineer conducting a technical interview.
-
-Using ONLY the resume below, generate exactly 8 interview questions.
-
-Rules:
-- Return ONLY the questions.
-- One question per line.
-- Do not number them.
-- Start easy and gradually increase difficulty.
-
+You are a senior technical interviewer. Based on the candidate's resume below, generate ONE strong, open-ended opening question regarding their primary technical domain.
+Return ONLY the question text.
 Resume Context:
-
 {context}
 """
 
         response = llm.invoke(prompt)
-        questions = [
-            q.strip()
-            for q in response.content.split("\n")
-            if q.strip()
-        ]
+        first_question= response.content.strip()
+        
         interview_id = str(uuid.uuid4())
         interview_repository.create_interview(
     interview_id,
     user_id,
-    len(questions)
+    0
 )
 
         self.sessions[interview_id] = {
     "user_id": user_id,
-    "questions": questions,
-"current_question": questions[0],
-"current_index": 0,
+"current_question": first_question,
+"question_count": 1,
+"max_safety_cap": max_safety_cap,
     "answers": [],
     "resume_context": context
 }
         return {
             "interview_id": interview_id,
-            "question": questions[0]
+            "question": first_question,
+            "question_number": 1
         }
 
     def submit_answer(self, interview_id: str, answer: str):
@@ -67,10 +56,9 @@ Resume Context:
         session = self.sessions.get(interview_id)
 
         if not session:
-            raise ValueError("Interview not found")
+            raise ValueError("Interview session not found or already concluded")
 
 
-        current_index = session["current_index"]
 
         current_question = session["current_question"]
 
@@ -99,18 +87,15 @@ Resume Context:
 
 
     # Move to next question
-        session["current_index"] += 1
 
 
     # Check interview finished
-        if session["current_index"] >= len(session["questions"]):
-            interview_repository.complete_interview(interview_id)
+        if session["question_count"] >= session["max_safety_cap"]:
+            res= self.end_interview(interview_id)
+            res["answered_question"]= current_question
+            return res
 
-            del self.sessions[interview_id]
-            return {
-                "finished": True,
-                "feedback": feedback
-            }
+            
 
 
         next_question = question_generator.generate_next_question(
@@ -119,15 +104,29 @@ Resume Context:
     previous_answer=answer,
     feedback=feedback
 )
+        session["question_count"]+=1
         session["current_question"] = next_question
         return {
         "finished": False,
         "question": next_question,
+        "question_number": session["question_count"],
+        "answered_question": current_question,
         "feedback": feedback
     }
 
     def end_interview(self, interview_id: str):
-        pass
+        session = self.sessions.get(interview_id)
+        if not session:
+            return {"finished": True, "message": "Interview already completed."}
+        total_answered = len(session["answers"])
+        interview_repository.complete_interview(interview_id, total_answered)
+        # Free backend memory
+        del self.sessions[interview_id]
+        return {
+            "finished": True,
+            "total_questions_answered": total_answered,
+            "feedback": "Interview completed successfully."
+        }
 
 
 interview_service = InterviewService()
