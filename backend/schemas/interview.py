@@ -8,6 +8,7 @@ class StartInterviewRequest(BaseModel):
 class StartInterviewResponse(BaseModel):
     interview_id: str
     question: str
+    question_number: int= 1
 
 
 class AnswerRequest(BaseModel):
