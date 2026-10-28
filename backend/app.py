@@ -31,7 +31,8 @@ from schemas.interview import (
     StartInterviewRequest,
     StartInterviewResponse,
     AnswerRequest,
-    AnswerResponse
+    AnswerResponse,
+    EndInterviewRequest
 )
 
 security = HTTPBearer(auto_error=False)
@@ -195,9 +196,20 @@ async def answer_interview(request: AnswerRequest):
     # Asynchronously dispatch evaluation job to AWS SQS queue
     sqs_service.enqueue_evaluation(
         interview_id=request.interview_id,
+        question=result.get("answered_question", "Technical Question"),
         answer=request.answer
     )
     return result
+
+@api_router.post("/interview/end")
+async def end_interview(request: EndInterviewRequest):
+    try:
+        return interview_service.end_interview(request.interview_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 @api_router.post("/transcribe")
 async def transcribe_audio(file: UploadFile = File(...)):
