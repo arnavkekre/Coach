@@ -17,11 +17,12 @@ class SQSService:
         self.sqs = boto3.client("sqs", region_name="ap-south-1")
         self.queue_url = QUEUE_URL
 
-    def enqueue_evaluation(self, interview_id: str, answer: str, user_id: str = "anonymous"):
+    def enqueue_evaluation(self, interview_id: str, question: str, answer: str, user_id: str = "anonymous"):
         """Pushes an interview evaluation task into SQS asynchronously."""
         payload = {
             "interview_id": interview_id,
             "user_id": user_id,
+            "question": question,
             "answer": answer,
             "action": "evaluate_with_groq"
         }
