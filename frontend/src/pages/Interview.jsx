@@ -17,6 +17,8 @@ function Interview() {
   const [isPaused, setIsPaused] = useState(false);
   const [speechRate, setSpeechRate] = useState(1.0);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [questionNumber, setQuestionNumber] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(25 * 60); 
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -305,6 +307,46 @@ function Interview() {
     }
   }, [started, finished]);
 
+    // ⏱️ 25-minute countdown timer with auto-finish
+  useEffect(() => {
+    if (!started || finished) return;
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleEndInterview("Time is up! Your interview has concluded.");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [started, finished, interviewId]);
+
+  // 🏁 End Interview Handler (called by Finish button or when timer hits 0)
+  const handleEndInterview = async (customMessage) => {
+    if (!interviewId || finished) return;
+
+    try {
+      setLoading(true);
+      stopSpeaking();
+
+      await api.post("/interview/end", { interview_id: interviewId });
+      setFinished(true);
+      stopWebcam();
+
+      const closingSpeech = customMessage || "Interview concluded. Your full evaluation report is now available.";
+      speakText(closingSpeech);
+    } catch (err) {
+      console.error("Error ending interview:", err);
+      alert("Could not end interview.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const startInterview = async () => {
     try {
       setLoading(true);
@@ -323,6 +365,7 @@ function Interview() {
 
       setInterviewId(response.data.interview_id);
       setQuestion(response.data.question);
+      setQuestionNumber(response.data.question_number || 1);
       speakText(response.data.question);
       setStarted(true);
     } catch (error) {
@@ -353,6 +396,11 @@ function Interview() {
         stopWebcam();
       } else {
         setQuestion(response.data.question);
+        if (response.data.question_number) {
+          setQuestionNumber(response.data.question_number);
+        } else {
+          setQuestionNumber((prev) => prev + 1);
+        }
         const fullspeech = `feedback: ${response.data.feedback}. Next question: ${response.data.question}`;
         speakText(fullspeech);
       }
@@ -383,6 +431,47 @@ function Interview() {
 
         {started && !finished && (
           <div className="mt-8">
+                          {/* 🎯 Status Bar: Adaptive Question Counter, Countdown Timer, & Finish Button */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 shadow-xs">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-cyan-700 bg-cyan-100 px-2.5 py-0.5 rounded-full">
+                    Adaptive Interview Mode
+                  </span>
+                  <h3 className="text-xl font-bold text-slate-800 mt-1">
+                    Question #{questionNumber}
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {/* ⏱️ Countdown Timer Display */}
+                  <div className={`px-3 py-1.5 rounded-lg font-mono text-sm font-semibold flex items-center gap-1.5 border ${
+                    timeLeft < 300 
+                      ? "bg-red-50 text-red-600 border-red-300 animate-pulse" 
+                      : "bg-white text-slate-700 border-slate-200"
+                  }`}>
+                    <span>⏱️</span>
+                    <span>{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}</span>
+                  </div>
+
+                  {/* 🏁 Finish Button: Unlocked after at least 3 questions */}
+                  <button
+                    type="button"
+                    onClick={() => handleEndInterview()}
+                    disabled={questionNumber <= 3 || loading}
+                    className={`px-4 py-2 text-sm font-semibold rounded-lg transition shadow-xs ${
+                      questionNumber > 3
+                        ? "bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+                        : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    }`}
+                    title={questionNumber <= 3 ? "Answer at least 3 questions to generate evaluation" : "Finish interview now"}
+                  >
+                    {questionNumber <= 3 
+                      ? `Answer ${4 - questionNumber} more to finish` 
+                      : "🏁 Finish & View Report"
+                    }
+                  </button>
+                </div>
+              </div>
             <div className="flex justify-center">
               <div className="relative rounded-xl overflow-hidden shadow-md border-2 border-slate-300 w-80 h-56 bg-black">
                 <video
