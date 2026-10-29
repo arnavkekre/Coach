@@ -25,9 +25,3 @@ class RAGRetriever:
 
 
 retriever = RAGRetriever()
-
-
-        return retrieved_docs
-    
-
-retriever = RAGRetriever()
