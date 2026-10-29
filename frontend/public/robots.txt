@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /interview
+Disallow: /chat
+Disallow: /history
+
+Sitemap: https://d36vtqnt7szogv.cloudfront.net/sitemap.xml
