@@ -23,3 +23,5 @@ class AnswerResponse(BaseModel):
 
 class EndInterviewRequest(BaseModel):
     interview_id: str
+    violation_count: int = 0
+    integrity_score: int = 100
