@@ -114,17 +114,33 @@ Resume Context:
         "feedback": feedback
     }
 
-    def end_interview(self, interview_id: str):
+    def end_interview(
+        self,
+        interview_id: str,
+        violation_count: int = 0,
+        integrity_score: int = 100
+    ):
         session = self.sessions.get(interview_id)
+
         if not session:
-            return {"finished": True, "message": "Interview already completed."}
+            return {
+                "finished": True,
+                "message": "Interview already completed"
+            }
         total_answered = len(session["answers"])
-        interview_repository.complete_interview(interview_id, total_answered)
-        # Free backend memory
+        interview_repository.complete_interview(
+            interview_id=interview_id,
+            total_answered=total_answered,
+            violation_count=violation_count,
+            integrity_score=integrity_score
+        )
+
         del self.sessions[interview_id]
         return {
             "finished": True,
             "total_questions_answered": total_answered,
+            "violation_count": violation_count,
+            "integrity_score": integrity_score,
             "feedback": "Interview completed successfully."
         }
 
