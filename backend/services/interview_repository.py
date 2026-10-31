@@ -47,12 +47,16 @@ class InterviewRepository:
     def complete_interview(
         self,
         interview_id: str,
-        total_answered: int
+        total_answered: int,
+        violation_count: int = 0,
+        integrity_score: int = 100
     ):
 
         supabase.table("interviews").update({
             "status": "completed",
             "total_questions": total_answered,
+            "violation_count": violation_count,
+            "integrity_score": integrity_score,
             "ended_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", interview_id).execute()
 
