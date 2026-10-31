@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import api from "../services/api";
 import { supabase } from "../services/supabase";
+import { initFaceLandmarker, analyzeFrame } from "../services/proctoringService";
 
 function Interview() {
   const [interviewId, setInterviewId] = useState(null);
@@ -10,7 +11,6 @@ function Interview() {
   const [finished, setFinished] = useState(false);
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
-
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -18,7 +18,10 @@ function Interview() {
   const [speechRate, setSpeechRate] = useState(1.0);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [questionNumber, setQuestionNumber] = useState(1);
-  const [timeLeft, setTimeLeft] = useState(25 * 60); 
+  const [timeLeft, setTimeLeft] = useState(25 * 60); // 25-minute countdown in seconds
+  const [proctorStatus, setProctorStatus] = useState("OK"); // "OK", "WARNING", "VIOLATION"
+  const [proctorWarning, setProctorWarning] = useState(null);
+  const [violationCount, setViolationCount] = useState(0);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -32,6 +35,12 @@ function Interview() {
   const activeUtteranceRef = useRef(null);
   const speechStartTimeRef = useRef(null);
   const hasBoundaryFiredRef = useRef(false);
+  const lastStrikeTimeRef = useRef(0);
+
+  const isRecordingRef = useRef(false);
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
 
   const startWebcam = async () => {
     try {
@@ -150,9 +159,7 @@ function Interview() {
     };
 
     utterance.onend = () => {
-      if (isCancelledInternallyRef.current) {
-        return;
-      }
+      if (isCancelledInternallyRef.current) return;
       setIsSpeaking(false);
       setIsPaused(false);
       currentTextRef.current = "";
@@ -249,16 +256,19 @@ function Interview() {
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
+
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         stream.getTracks().forEach((track) => track.stop());
         await handleTranscription(audioBlob);
       };
+
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
@@ -284,7 +294,9 @@ function Interview() {
           "Content-Type": "multipart/form-data",
         },
       });
-      setAnswer((prev) => (prev ? `${prev} ${response.data.text}` : response.data.text));
+      if (response.data.text) {
+        setAnswer((prev) => (prev ? `${prev} ${response.data.text}` : response.data.text));
+      }
     } catch (err) {
       console.error("Transcription error:", err);
       alert("Failed to transcribe the audio.");
@@ -307,7 +319,7 @@ function Interview() {
     }
   }, [started, finished]);
 
-    // ⏱️ 25-minute countdown timer with auto-finish
+  // ⏱️ 25-minute countdown timer with auto-finish
   useEffect(() => {
     if (!started || finished) return;
 
@@ -325,19 +337,80 @@ function Interview() {
     return () => clearInterval(timer);
   }, [started, finished, interviewId]);
 
-  // 🏁 End Interview Handler (called by Finish button or when timer hits 0)
+  // 🛡️ Real-Time AI Proctoring & Tab Switch Guard
+    // 🛡️ Real-Time AI Proctoring & Tab Switch Guard
+  useEffect(() => {
+    if (!started || finished) return;
+
+    let isSubscribed = true;
+    let proctorInterval = null;
+
+    // 1. Initialize Google MediaPipe (Clean, no audio lock)
+    initFaceLandmarker().then(() => {
+      if (!isSubscribed) return;
+
+      proctorInterval = setInterval(() => {
+        if (videoRef.current) {
+          const analysis = analyzeFrame(videoRef.current, isRecordingRef.current);
+          setProctorStatus(analysis.status);
+          setProctorWarning(analysis.warning);
+
+          // Cooldown debounce: only add 1 strike every 4 seconds for an ongoing warning
+          if (analysis.status === "VIOLATION" || analysis.status === "WARNING") {
+            const now = Date.now();
+            if (now - lastStrikeTimeRef.current > 4000) {
+              setViolationCount((prev) => prev + 1);
+              lastStrikeTimeRef.current = now;
+            }
+          }
+        }
+      }, 600);
+    });
+
+    // 2. Detect Tab-Switching (Cheating via ChatGPT / Google)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setProctorStatus("VIOLATION");
+        setProctorWarning("Tab switched! Please return to the interview.");
+        setViolationCount((prev) => prev + 1);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      isSubscribed = false;
+      if (proctorInterval) clearInterval(proctorInterval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [started, finished]);
+
+  // 🏁 End Interview Handler (sends telemetry & score to backend)
   const handleEndInterview = async (customMessage) => {
+    
     if (!interviewId || finished) return;
 
     try {
       setLoading(true);
       stopSpeaking();
 
-      await api.post("/interview/end", { interview_id: interviewId });
+      const isTerminated = violationCount >= 5;
+      const calculatedIntegrity = isTerminated
+        ? 0
+        : Math.max(0, 100 - violationCount * 10);
+
+      await api.post("/interview/end", {
+        interview_id: interviewId,
+        violation_count: violationCount,
+        integrity_score: calculatedIntegrity,
+      });
+
       setFinished(true);
       stopWebcam();
 
-      const closingSpeech = customMessage || "Interview concluded. Your full evaluation report is now available.";
+      const closingSpeech =
+        customMessage ||
+        "Interview concluded. Your full evaluation report is now available.";
       speakText(closingSpeech);
     } catch (err) {
       console.error("Error ending interview:", err);
@@ -346,10 +419,18 @@ function Interview() {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    if (started && !finished && violationCount >= 5) {
+      handleEndInterview(
+        "Interview terminated due to excessive proctoring violations. Your session has been flagged for review."
+      );
+    }
+  }, [violationCount, started, finished]);
 
   const startInterview = async () => {
     try {
       setLoading(true);
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -381,6 +462,7 @@ function Interview() {
 
     try {
       setLoading(true);
+
       const response = await api.post("/interview/answer", {
         interview_id: interviewId,
         answer: answer,
@@ -389,11 +471,9 @@ function Interview() {
       setFeedback(response.data.feedback);
       setAnswer("");
 
-      if (response.data.finished) {
-        setFinished(true);
-        const fullspeech = `feedback: ${response.data.feedback}. Congratulations you have completed the interview`;
-        speakText(fullspeech);
-        stopWebcam();
+            if (response.data.finished) {
+        const fullspeech = `Feedback: ${response.data.feedback}. Congratulations, you have completed the interview!`;
+        handleEndInterview(fullspeech);
       } else {
         setQuestion(response.data.question);
         if (response.data.question_number) {
@@ -401,12 +481,12 @@ function Interview() {
         } else {
           setQuestionNumber((prev) => prev + 1);
         }
-        const fullspeech = `feedback: ${response.data.feedback}. Next question: ${response.data.question}`;
+        const fullspeech = `Feedback: ${response.data.feedback}. Next question: ${response.data.question}`;
         speakText(fullspeech);
       }
     } catch (error) {
       console.error(error);
-      alert("Something went wrong");
+      alert("Something went wrong submitting answer");
     } finally {
       setLoading(false);
     }
@@ -423,7 +503,7 @@ function Interview() {
         {!started && (
           <button
             onClick={startInterview}
-            className="mt-8 bg-cyan-500 text-white px-6 py-3 rounded-lg hover:bg-cyan-600 cursor-pointer"
+            className="mt-8 bg-cyan-500 text-white px-6 py-3 rounded-lg hover:bg-cyan-600 cursor-pointer font-semibold shadow-xs transition"
           >
             {loading ? "Starting..." : "Start Interview"}
           </button>
@@ -431,49 +511,59 @@ function Interview() {
 
         {started && !finished && (
           <div className="mt-8">
-                          {/* 🎯 Status Bar: Adaptive Question Counter, Countdown Timer, & Finish Button */}
-              <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 shadow-xs">
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-cyan-700 bg-cyan-100 px-2.5 py-0.5 rounded-full">
-                    Adaptive Interview Mode
-                  </span>
-                  <h3 className="text-xl font-bold text-slate-800 mt-1">
-                    Question #{questionNumber}
-                  </h3>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {/* ⏱️ Countdown Timer Display */}
-                  <div className={`px-3 py-1.5 rounded-lg font-mono text-sm font-semibold flex items-center gap-1.5 border ${
-                    timeLeft < 300 
-                      ? "bg-red-50 text-red-600 border-red-300 animate-pulse" 
-                      : "bg-white text-slate-700 border-slate-200"
-                  }`}>
-                    <span>⏱️</span>
-                    <span>{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}</span>
-                  </div>
-
-                  {/* 🏁 Finish Button: Unlocked after at least 3 questions */}
-                  <button
-                    type="button"
-                    onClick={() => handleEndInterview()}
-                    disabled={questionNumber <= 3 || loading}
-                    className={`px-4 py-2 text-sm font-semibold rounded-lg transition shadow-xs ${
-                      questionNumber > 3
-                        ? "bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
-                        : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                    }`}
-                    title={questionNumber <= 3 ? "Answer at least 3 questions to generate evaluation" : "Finish interview now"}
-                  >
-                    {questionNumber <= 3 
-                      ? `Answer ${4 - questionNumber} more to finish` 
-                      : "🏁 Finish & View Report"
-                    }
-                  </button>
-                </div>
+            {/* Status Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-slate-50 border border-slate-200 rounded-xl p-4 mb-6 shadow-xs">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-cyan-700 bg-cyan-100 px-2.5 py-0.5 rounded-full">
+                  Adaptive Interview Mode
+                </span>
+                <h3 className="text-xl font-bold text-slate-800 mt-1">
+                  Question #{questionNumber}
+                </h3>
               </div>
-            <div className="flex justify-center">
-              <div className="relative rounded-xl overflow-hidden shadow-md border-2 border-slate-300 w-80 h-56 bg-black">
+
+              <div className="flex items-center gap-3">
+                {/* ⏱️ Countdown Timer */}
+                <div
+                  className={`px-3 py-1.5 rounded-lg font-mono text-sm font-semibold flex items-center gap-1.5 border ${
+                    timeLeft < 300
+                      ? "bg-red-50 text-red-600 border-red-300 animate-pulse"
+                      : "bg-white text-slate-700 border-slate-200"
+                  }`}
+                >
+                  <span>⏱️</span>
+                  <span>
+                    {Math.floor(timeLeft / 60)}:
+                    {(timeLeft % 60).toString().padStart(2, "0")}
+                  </span>
+                </div>
+
+                {/* 🏁 Finish Button */}
+                <button
+                  type="button"
+                  onClick={() => handleEndInterview()}
+                  disabled={questionNumber <= 3 || loading}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg transition shadow-xs ${
+                    questionNumber > 3
+                      ? "bg-rose-600 hover:bg-rose-700 text-white cursor-pointer"
+                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                  }`}
+                  title={
+                    questionNumber <= 3
+                      ? "Answer at least 3 questions to generate evaluation"
+                      : "Finish interview now"
+                  }
+                >
+                  {questionNumber <= 3
+                    ? `Answer ${4 - questionNumber} more to finish`
+                    : "🏁 Finish & View Report"}
+                </button>
+              </div>
+            </div>
+
+            {/* Webcam & Proctoring Box */}
+            <div className="flex flex-col items-center mb-6">
+              <div className="relative rounded-xl overflow-hidden shadow-lg border-2 border-slate-300 w-80 h-56 bg-black">
                 <video
                   ref={videoRef}
                   autoPlay
@@ -481,19 +571,54 @@ function Interview() {
                   muted
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute top-2 left-2 bg-red-600 text-white text-xs px-2 py-0.5 rounded-full font-semibold flex items-center gap-1 shadow">
-                  <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
-                  LIVE
+
+                {/* Top-Left: Status Badges */}
+                <div className="absolute top-2 left-2 flex items-center gap-1.5">
+                  <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 shadow">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                    LIVE
+                  </span>
+
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-bold shadow transition ${
+                      proctorStatus === "OK"
+                        ? "bg-emerald-600/90 text-white"
+                        : proctorStatus === "WARNING"
+                        ? "bg-amber-600/90 text-white animate-pulse"
+                        : "bg-rose-600/90 text-white animate-pulse"
+                    }`}
+                  >
+                    {proctorStatus === "OK"
+  ? "🟢 Attentive"
+  : proctorStatus === "WARNING"
+  ? "🟡 Looking Away"
+  : "🔴 Flagged"}
+                  </span>
                 </div>
+
+                {/* Top-Right: Flags */}
+                {violationCount > 0 && (
+                  <div className="absolute top-2 right-2 bg-slate-900/85 backdrop-blur-xs text-rose-300 text-[10px] px-2 py-0.5 rounded-md font-semibold border border-rose-500/40">
+                    Flags: {violationCount}
+                  </div>
+                )}
+
+                {/* Bottom: Alert Banner */}
+                {proctorWarning && (
+                  <div className="absolute bottom-0 inset-x-0 bg-rose-700/90 backdrop-blur-xs text-white text-xs font-semibold py-1 px-3 text-center transition">
+                    ⚠️ {proctorWarning}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="bg-slate-100 rounded-lg p-5 mt-6">
+            {/* Question Text & TTS Toolbar */}
+            <div className="bg-slate-100 rounded-lg p-5">
               <h2 className="font-semibold text-lg">Question</h2>
-              <p className="mt-3 text-slate-700">{question}</p>
+              <p className="mt-3 text-slate-700 leading-relaxed">{question}</p>
 
-              {/* Smart AI Voice Toolbar */}
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-lg px-4 py-2.5 shadow-xs">
+              {/* Toolbar */}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-lg px-4 py-2.5 shadow-xs">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -504,7 +629,6 @@ function Interview() {
                         ? "bg-red-500 hover:bg-red-600 text-white cursor-pointer"
                         : "bg-slate-200 text-slate-400 cursor-not-allowed"
                     }`}
-                    title="Stop speaking permanently"
                   >
                     ⏹️ Stop
                   </button>
@@ -518,7 +642,6 @@ function Interview() {
                         ? "bg-slate-800 hover:bg-slate-900 text-white cursor-pointer"
                         : "bg-slate-200 text-slate-400 cursor-not-allowed"
                     }`}
-                    title={isPaused ? "Resume speaking" : "Pause audio"}
                   >
                     {isPaused ? "▶️ Resume" : "⏸️ Pause"}
                   </button>
@@ -531,7 +654,6 @@ function Interview() {
                         ? "border-slate-300 text-slate-700 hover:bg-slate-100"
                         : "border-red-300 bg-red-50 text-red-600 font-bold"
                     }`}
-                    title={voiceEnabled ? "Mute audio" : "Unmute audio"}
                   >
                     {voiceEnabled ? "🔊 Mute" : "🔇 Unmute"}
                   </button>
@@ -567,12 +689,13 @@ function Interview() {
               </div>
             </div>
 
+            {/* Answer Input Area */}
             <div className="flex items-center justify-between mt-6 mb-2">
               <button
                 type="button"
                 onClick={isRecording ? stopRecording : startRecording}
                 disabled={loading || isTranscribing}
-                className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm transition whitespace-nowrap cursor-pointer ${
+                className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm transition cursor-pointer ${
                   isRecording
                     ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
                     : "bg-slate-800 hover:bg-slate-900 text-white"
@@ -589,16 +712,17 @@ function Interview() {
             </div>
 
             <textarea
-              className="w-full mt-2 border rounded-lg p-4"
+              className="w-full mt-2 border border-slate-300 rounded-lg p-4 focus:outline-cyan-500"
               rows="5"
-              placeholder="Type your answer..."
+              placeholder="Speak or type your answer..."
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
             />
 
             <button
               onClick={submitAnswer}
-              className="mt-4 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 cursor-pointer"
+              disabled={loading}
+              className="mt-4 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold cursor-pointer shadow-xs transition"
             >
               {loading ? "Evaluating..." : "Submit Answer"}
             </button>
@@ -606,16 +730,48 @@ function Interview() {
         )}
 
         {feedback && (
-          <div className="mt-8 bg-blue-50 border rounded-lg p-5">
-            <h2 className="font-bold text-lg">Feedback</h2>
-            <p className="mt-3 whitespace-pre-line">{feedback}</p>
+          <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-5">
+            <h2 className="font-bold text-lg text-blue-900">Feedback</h2>
+            <p className="mt-3 whitespace-pre-line text-blue-800 leading-relaxed">
+              {feedback}
+            </p>
           </div>
         )}
 
-        {finished && (
-          <div className="mt-8 bg-green-50 border rounded-lg p-5">
-            <h2 className="text-xl font-bold text-green-700">Interview Completed 🎉</h2>
-            <p className="mt-2">You have completed the interview.</p>
+                {finished && (
+          <div
+            className={`mt-8 rounded-xl p-6 text-center border ${
+              violationCount >= 5
+                ? "bg-rose-50 border-rose-300"
+                : "bg-emerald-50 border-emerald-200"
+            }`}
+          >
+            <h2
+              className={`text-2xl font-bold ${
+                violationCount >= 5 ? "text-rose-800" : "text-emerald-800"
+              }`}
+            >
+              {violationCount >= 5
+                ? "🚨 Interview Terminated for Security Violations"
+                : "🎉 Interview Completed!"}
+            </h2>
+            <p className="mt-2 text-slate-600">
+              {violationCount >= 5
+                ? "Session was automatically disqualified due to repeated proctoring violations. Integrity Score: 0%."
+                : "Your answers and proctoring telemetry have been safely recorded."}
+            </p>
+            <a
+              href="/history"
+              className={`inline-block mt-4 px-6 py-2.5 font-semibold rounded-lg shadow-sm transition text-white ${
+                violationCount >= 5
+                  ? "bg-rose-600 hover:bg-rose-700"
+                  : "bg-emerald-600 hover:bg-emerald-700"
+              }`}
+            >
+              {violationCount >= 5
+                ? "View Incident Report in History →"
+                : "View Detailed Evaluation & Proctoring Score →"}
+            </a>
           </div>
         )}
       </div>
