@@ -204,7 +204,11 @@ async def answer_interview(request: AnswerRequest):
 @api_router.post("/interview/end")
 async def end_interview(request: EndInterviewRequest):
     try:
-        return interview_service.end_interview(request.interview_id)
+        return interview_service.end_interview(
+            interview_id=request.interview_id,
+            violation_count=request.violation_count,
+            integrity_score=request.integrity_score,
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=400,
